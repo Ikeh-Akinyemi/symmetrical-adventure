@@ -1,4 +1,4 @@
-# Production-Grade Gusto Webhook Handler
+# Gusto Webhook Handler
 
 This project is a webhook handler for Gusto Embedded Payroll, written in Go. It serves as a reference implementation for building a resilient, secure, and fault-tolerant system that can handle the complexities of a real-world webhook integration.
 
