@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"gusto-webhook-guide/internal/contextkeys"
+	"gusto-webhook-guide/internal/models"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,13 +13,12 @@ import (
 )
 
 func TestHandleWebhook(t *testing.T) {
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil)) // Suppress logs during tests.
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 
-	// Define test cases for each logical path in the handler.
 	testCases := []struct {
 		name               string
 		requestBody        []byte
-		jobQueueCapacity   int // To test the "queue full" scenario.
+		jobQueueCapacity   int
 		setBodyInContext   bool
 		expectedStatusCode int
 		expectJobQueued    bool
@@ -58,7 +58,7 @@ func TestHandleWebhook(t *testing.T) {
 		{
 			name:               "Failure - Job Queue Full",
 			requestBody:        []byte(`{"event_type": "company.created", "uuid": "123"}`),
-			jobQueueCapacity:   0, // A zero-capacity (unbuffered) channel will always be full.
+			jobQueueCapacity:   0,
 			setBodyInContext:   true,
 			expectedStatusCode: http.StatusServiceUnavailable,
 			expectJobQueued:    false,
@@ -67,7 +67,7 @@ func TestHandleWebhook(t *testing.T) {
 			name:               "Failure - Missing Body in Context",
 			requestBody:        []byte(`{}`),
 			jobQueueCapacity:   1,
-			setBodyInContext:   false, // Simulate a middleware failure.
+			setBodyInContext:   false,
 			expectedStatusCode: http.StatusInternalServerError,
 			expectJobQueued:    false,
 		},
@@ -75,29 +75,23 @@ func TestHandleWebhook(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Create a job queue with the specified capacity for the test.
-			jobQueue := make(chan []byte, tc.jobQueueCapacity)
+			jobQueue := make(chan models.Job, tc.jobQueueCapacity)
 			handler := NewHandler(logger, jobQueue)
 
-			// Create the request and response recorder.
 			req := httptest.NewRequest("POST", "/webhooks", bytes.NewReader(tc.requestBody))
 			rr := httptest.NewRecorder()
 
-			// Set the body in the context if the test case requires it.
 			if tc.setBodyInContext {
 				ctx := context.WithValue(req.Context(), contextkeys.RequestBodyKey, tc.requestBody)
 				req = req.WithContext(ctx)
 			}
 
-			// Call the handler.
 			handler.HandleWebhook(rr, req)
 
-			// Assert the status code.
 			if status := rr.Code; status != tc.expectedStatusCode {
 				t.Errorf("handler returned wrong status code: got %v want %v", status, tc.expectedStatusCode)
 			}
 
-			// Assert whether a job was queued or not.
 			var jobWasQueued bool
 			select {
 			case <-jobQueue:

@@ -1,4 +1,4 @@
-package webhooks
+package models
 
 import "encoding/json"
 
@@ -10,5 +10,11 @@ type WebhookEvent struct {
 	ResourceUUID string          `json:"resource_uuid"`
 	EntityType   string          `json:"entity_type"`
 	EntityUUID   string          `json:"entity_uuid"`
-	Payload      json.RawMessage `json:"payload"` // Payload structure is variable
+	Payload      json.RawMessage `json:"payload"`
+}
+
+// Job wraps the raw event payload and includes a retry counter.
+type Job struct {
+	Payload  []byte
+	Attempts int
 }

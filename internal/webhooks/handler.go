@@ -3,6 +3,7 @@ package webhooks
 import (
 	"encoding/json"
 	"gusto-webhook-guide/internal/contextkeys"
+	"gusto-webhook-guide/internal/models"
 	"log/slog"
 	"net/http"
 )
@@ -10,11 +11,11 @@ import (
 // Handler contains dependencies for the webhook HTTP handlers.
 type Handler struct {
 	Logger   *slog.Logger
-	JobQueue chan<- []byte // Write-only channel
+	JobQueue chan<- models.Job // Corrected type
 }
 
 // NewHandler creates a new instance of the webhook Handler.
-func NewHandler(logger *slog.Logger, jobQueue chan<- []byte) *Handler {
+func NewHandler(logger *slog.Logger, jobQueue chan<- models.Job) *Handler {
 	return &Handler{
 		Logger:   logger,
 		JobQueue: jobQueue,
@@ -37,7 +38,7 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if token, isVerification := payload["verification_token"]; isVerification {
-		h.Logger.Info("✅ Step 2: Received verification payload from Gusto. Use the token and UUID from the logs to complete verification.",
+		h.Logger.Info("✅ Received verification payload from Gusto. Use the token and UUID from the logs to complete verification.",
 			"verification_token", token,
 			"webhook_subscription_uuid", payload["webhook_subscription_uuid"],
 		)
@@ -47,8 +48,13 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, isEvent := payload["event_type"]; isEvent {
+		// Create a new job with 0 initial attempts.
+		job := models.Job{
+			Payload:  bodyBytes,
+			Attempts: 0,
+		}
 		select {
-		case h.JobQueue <- bodyBytes:
+		case h.JobQueue <- job:
 			h.Logger.Info("Webhook event successfully queued for processing")
 			w.WriteHeader(http.StatusAccepted)
 		default:
