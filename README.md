@@ -1,6 +1,6 @@
 # Gusto Webhook Handler
 
-This project is a webhook handler for Gusto Embedded Payroll, written in Go. It serves as a reference implementation for building a resilient, secure, and fault-tolerant system that can handle the complexities of a real-world webhook integration.
+This project is a production-ready webhook handler for Gusto Embedded Payroll, written in Go. It serves as a reference implementation for building a resilient, secure, and fault-tolerant system that can handle the complexities of a real-world webhook integration.
 
 The primary goal of this project is to demonstrate architectural best practices beyond a basic implementation.
 
@@ -8,10 +8,10 @@ The primary goal of this project is to demonstrate architectural best practices 
 
 ## Features
 
-  * **Secure Signature Verification:** Verifies incoming webhooks using HMAC-SHA256 and the dynamic `verification_token` to prevent spoofing.
+  * **Secure Signature Verification:** Verifies incoming webhooks using HMAC-SHA256 and a dynamic `verification_token` to prevent spoofing attacks.
   * **Asynchronous Processing:** Acknowledges webhook receipt immediately (`202 Accepted`) and processes events in the background using a worker pool to ensure high availability.
   * **Idempotency:** Prevents duplicate processing of retried events by tracking unique event UUIDs.
-  * **Resilient Error Handling:** Intelligently classifies processing failures into **transient** vs. **permanent** errors to work effectively with Gusto's retry system.
+  * **Resilient Error Handling:** Intelligently classifies failures into transient vs. permanent and includes a **built-in retry mechanism** with backoff for transient processing errors.
   * **Integrated Setup:** Includes a local admin endpoint to orchestrate the multi-step webhook subscription and verification handshake with the Gusto API.
 
 -----
@@ -21,18 +21,26 @@ The primary goal of this project is to demonstrate architectural best practices 
 ```plaintext
 .
 ├── cmd/
-│   ├── server/       # Main server application
-│   │   └── main.go
-│   └── setup/        # (No longer used, logic integrated into server)
+│   └── server/
+│       └── main.go
 ├── internal/
-│   ├── contextkeys/  # Type-safe context keys
-│   ├── middleware/   # HTTP middleware (e.g., signature verification)
-│   ├── setup/        # Handler for the one-time setup endpoint
-│   ├── webhooks/     # Core webhook handling logic and types
-│   └── worker/       # Background worker pool and idempotency store
-├── .env              # Local environment variables
+│   ├── contextkeys/
+│   │   └── keys.go
+│   ├── middleware/
+│   │   └── security.go
+│   ├── models/
+│   │   └── types.go
+│   ├── setup/
+│   │   └── handler.go
+│   ├── webhooks/
+│   │   └── handler.go
+│   └── worker/
+│       ├── errors.go
+│       ├── pool.go
+│       └── store.go
+├── .env
 ├── go.mod
-└── Makefile          # Commands for building, running, and testing
+└── Makefile
 ```
 
 -----
@@ -53,7 +61,7 @@ Before you begin, ensure you have the following installed:
 
 ```sh
 git clone https://github.com/Ikeh-Akinyemi/symmetrical-adventure.git
-cd gusto-webhook-handler
+cd symmetrical-adventure
 ```
 
 **2. Create the Environment File**
@@ -104,11 +112,7 @@ ngrok http 8080
 This is a one-time, two-part process to securely register and verify your webhook endpoint with Gusto.
 
 **Step 1: Kick Off the Subscription**
-In a third terminal, use `curl` to call the local `/admin/setup-webhook` endpoint. This tells your server to make an API call to Gusto to initiate the subscription.
-
-  * **Replace `<YOUR_NGROK_URL>`** with the URL you copied from ngrok.
-
-<!-- end list -->
+In a third terminal, use `curl` to call the local `/admin/setup-webhook` endpoint. This tells your server to make an API call to Gusto to initiate the subscription. **Remember to replace `<YOUR_NGROK_URL>`** with the URL you copied from ngrok.
 
 ```sh
 curl -X POST http://localhost:8080/admin/setup-webhook \
@@ -129,11 +133,7 @@ After running the command, check the logs in **Terminal 1** (your running server
 ```
 
 **Step 3: Complete the Verification**
-Manually complete the handshake by using the `verification_token` and `webhook_subscription_uuid` from your logs in the following `curl` command.
-
-  * **Replace the placeholders** with the values from your logs.
-
-<!-- end list -->
+Manually complete the handshake by using the `verification_token` and `webhook_subscription_uuid` from your logs in the following `curl` command. **Remember to replace the placeholders** with the values from your logs.
 
 ```sh
 curl --request PUT \
@@ -156,10 +156,19 @@ Your application is now fully configured and ready to receive webhooks securely.
 
 ## Testing
 
-To run the complete suite of unit tests, use the following command:
+To run the complete suite of unit tests, use the following command. The tests are run with the `-race` flag to detect potential concurrency issues.
 
 ```sh
 make test
 ```
 
-The tests cover the core logic of the security middleware, the idempotency store, the main webhook handler's different routing paths, and the worker's error classification.
+-----
+
+## Makefile Commands
+
+  * `make build`: Compiles the application binary.
+  * `make run`: Runs the application locally.
+  * `make test`: Runs all unit tests with the race detector.
+  * `make lint`: Lints the codebase using `golangci-lint`.
+  * `make clean`: Removes build artifacts.
+  * `make help`: Displays a list of all available commands.
