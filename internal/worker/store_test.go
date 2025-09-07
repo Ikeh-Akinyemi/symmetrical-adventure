@@ -10,15 +10,15 @@ func TestIdempotencyStore(t *testing.T) {
 		store := NewIdempotencyStore()
 		key := "test-uuid-123"
 
-		// Initially, the key should not exist
+		// Initially, the key should not exist.
 		if store.Has(key) {
 			t.Errorf("Expected Has(%q) to be false, but got true", key)
 		}
 
-		// Set the key
+		// Set the key.
 		store.Set(key)
 
-		// Now, the key should exist
+		// Now, the key should exist.
 		if !store.Has(key) {
 			t.Errorf("Expected Has(%q) to be true, but got false", key)
 		}
@@ -30,7 +30,9 @@ func TestIdempotencyStore(t *testing.T) {
 		numGoroutines := 100
 		var wg sync.WaitGroup
 
-		// Run many goroutines that try to Set the same key simultaneously
+		// Run many goroutines that try to Set the same key simultaneously.
+		// This test is designed to fail if the mutex is missing or used incorrectly,
+		// especially when run with the -race flag.
 		wg.Add(numGoroutines)
 		for range numGoroutines {
 			go func() {
@@ -40,7 +42,7 @@ func TestIdempotencyStore(t *testing.T) {
 		}
 		wg.Wait()
 
-		// After all goroutines complete, the key must exist
+		// After all goroutines complete, the key must exist.
 		if !store.Has(key) {
 			t.Errorf("Expected key to be set after concurrent writes, but it was not")
 		}

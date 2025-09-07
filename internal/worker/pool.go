@@ -5,7 +5,6 @@ import (
 	"errors"
 	"gusto-webhook-guide/internal/webhooks"
 	"log/slog"
-	"strings"
 	"sync"
 )
 
@@ -88,27 +87,33 @@ func (p *Pool) worker(id int) {
 	}
 }
 
-// processEvent simulates the actual work of handling a webhook event.
-// It returns different error types based on the eventType to demonstrate handling.
+// processEvent simulates making an API call back to Gusto and handling the structured error response.
 func (p *Pool) processEvent(event webhooks.WebhookEvent) error {
 	p.logger.Info("Worker processing event", "event_uuid", event.UUID, "event_type", event.EventType)
 
-	// Simulate different outcomes based on event type for demonstration.
-	if strings.Contains(event.EventType, "company--created") {
-		// Simulate success
-		return nil
+	// A real-world example: when a contractor is created,
+	// maybe your business logic requires you to immediately set their compensation.
+	if event.EventType == "contractor.created" {
+
+		// err := GustoSDKClient.SetContractorCompensation(event.ResourceUUID, 5000.00) // hypothetical
+		err := errors.New("Gusto API Error")
+
+		if err != nil {
+			// In a real app, you would parse the JSON error response from Gusto here.
+			// parsedGustoError := parseGustoErrorFromResponse(err)
+			
+			// For our guide, we simulate that parsing and classification step:
+			errorCategory := "invalid_attribute_value"
+
+			switch errorCategory {
+			case "server_error", "rate_limit_error":
+				return &ErrTransient{Err: err}
+			default:
+				// Treat validation errors, auth errors, etc., as permanent.
+				return &ErrPermanent{Err: err}
+			}
+		}
 	}
 
-	if strings.Contains(event.EventType, "company--updated") {
-		// Simulate a temporary, retryable error (e.g., downstream service is down).
-		return &ErrTransient{Err: errors.New("failed to connect to downstream service")}
-	}
-
-	if strings.Contains(event.EventType, "company--deleted") {
-		// Simulate a permanent, non-retryable error (e.g., invalid data).
-		return &ErrPermanent{Err: errors.New("company has an invalid configuration")}
-	}
-
-	// Default to success for any other event types.
 	return nil
 }
