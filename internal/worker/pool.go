@@ -3,8 +3,11 @@ package worker
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"gusto-webhook-guide/internal/models"
+	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -96,27 +99,65 @@ func (p *Pool) worker(id int) {
 	}
 }
 
-// processEvent simulates making an API call back to Gusto and handling the structured error response.
-func (p *Pool) processEvent(event models.WebhookEvent) error { // Corrected type
+// GustoAPIErrorResponse defines the structure of a Gusto API error.
+type GustoAPIErrorResponse struct {
+	Errors []struct {
+		Category string `json:"category"`
+		Message  string `json:"message"`
+	} `json:"errors"`
+}
+
+// processEvent makes a real API call back to Gusto and handles the response.
+func (p *Pool) processEvent(event models.WebhookEvent) error {
 	p.logger.Info("Worker processing event", "event_uuid", event.UUID, "event_type", event.EventType)
 
-	errorCategory := ""
+	// We'll use the 'company.updated' event to trigger a real API call.
 	if strings.Contains(event.EventType, "company.updated") {
-		errorCategory = "server_error"
-	}
-	if strings.Contains(event.EventType, "company.deleted") {
-		errorCategory = "invalid_attribute_value"
-	}
+		// 1. Get the company-specific access token.
+		accessToken := "supply-access-token-here"
 
-	if errorCategory != "" {
-		err := errors.New("simulated Gusto API error")
-		switch errorCategory {
-		case "server_error", "rate_limit_error", "system_error":
-			return &ErrTransient{Err: err}
-		default:
-			return &ErrPermanent{Err: err}
+		// 2. Make an API call to get company details.
+		companyURL := fmt.Sprintf("https://api.gusto-demo.com/v1/companies/%s", event.ResourceUUID)
+		req, _ := http.NewRequest("GET", companyURL, nil)
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+
+		client := &http.Client{Timeout: 15 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			// A client-side error (e.g., DNS, timeout) is a transient failure.
+			return &ErrTransient{Err: fmt.Errorf("http client error: %w", err)}
 		}
+		defer resp.Body.Close()
+
+		// 3. Handle the API response.
+		if resp.StatusCode >= 400 {
+			// This is an API error from Gusto. Parse the error response.
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			var gustoError GustoAPIErrorResponse
+			if err := json.Unmarshal(bodyBytes, &gustoError); err != nil {
+				// If we can't parse the error, treat it as transient.
+				return &ErrTransient{Err: fmt.Errorf("failed to parse Gusto error response: %w", err)}
+			}
+
+			if len(gustoError.Errors) > 0 {
+				errorCategory := gustoError.Errors[0].Category
+				apiErr := fmt.Errorf("Gusto API error: %s", gustoError.Errors[0].Message)
+
+				// Use the 'category' from the JSON error to classify the failure.
+				switch errorCategory {
+				case "server_error", "rate_limit_error", "system_error":
+					return &ErrTransient{Err: apiErr}
+				default:
+					// Treat all others (validation, auth, etc.) as permanent.
+					return &ErrPermanent{Err: apiErr}
+				}
+			}
+		}
+
+		// If status code is 2xx, the API call was successful.
+		p.logger.Info("Successfully fetched company details after webhook event.")
 	}
 
+	// For all other event types, we do nothing.
 	return nil
 }
